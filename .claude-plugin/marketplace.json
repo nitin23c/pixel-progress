@@ -1,0 +1,6 @@
+{
+  "name": "pixel-progress",
+  "description": "Claude Code mods by Nitin Chauhan",
+  "owner": { "name": "Nitin Chauhan" },
+  "plugins": [{ "name": "pixel-progress", "source": "./" }]
+}
