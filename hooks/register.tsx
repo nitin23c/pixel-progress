@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { Status, View } from '../types'
 
@@ -155,21 +155,27 @@ const colorOf = (s: Scene, i: number, rank: number[], shade: number[]): string =
   return theme.empty
 }
 
+const ticker: { timer?: Timer } = {}
+
+const startTicker = ($: EngineInterface) => {
+  if (ticker.timer) return
+  ticker.timer = $.clock.every(TICK_MS, () => { void advance($) })
+}
+
+const stopTicker = () => {
+  ticker.timer?.cancel()
+  ticker.timer = undefined
+}
+
+// the clock only runs while the grid is on screen
 const advance = async ($: EngineInterface) => {
-  if ((await read($, view)).phase === 'idle') return
+  if ((await read($, view)).phase === 'idle') return stopTicker()
   await update($, view, x =>
     x.phase === 'done' && x.tick - x.doneTick >= HOLD_TICKS
       ? { ...IDLE, seed: x.seed }
       : { ...x, tick: x.tick + 1 },
   )
-}
-
-const ticker = { isOn: false }
-
-const startTicker = ($: EngineInterface) => {
-  if (ticker.isOn) return
-  ticker.isOn = true
-  $.clock.every(TICK_MS, () => { void advance($) })
+  if ((await read($, view)).phase === 'idle') stopTicker()
 }
 
 export const register: Register = (on, options) => {
@@ -177,18 +183,19 @@ export const register: Register = (on, options) => {
   const theme = Object.prototype.hasOwnProperty.call(THEMES, key) ? THEMES[key] : THEMES.github
 
   on('turn.start', async ($, e, next) => {
-    startTicker($)
     if (!e.agentId) {
       await update($, view, v =>
         v.phase === 'working' ? v : { ...IDLE, phase: 'working', seed: v.seed + 7919 },
       )
+      startTicker($)
     }
 
     return next(e)
   })
 
-  on('tool.call', async ($, e, next) => {
-    if (!e.agentId && (e.tool === 'TodoWrite' || e.tool === PLAN_TOOL)) {
+  // only the two plan tools reach this hook, and it never blocks one
+  on('tool.call', { tool: ['TodoWrite', PLAN_TOOL] }, async ($, e, next) => {
+    if (!e.agentId) {
       const call = e as unknown as PlanCall
       try {
         await update($, view, v => {
@@ -204,7 +211,7 @@ export const register: Register = (on, options) => {
     }
 
     return next(e)
-  })
+  }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
     if (!e.agentId) {
@@ -219,15 +226,17 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
-    startTicker($)
+    // after a reload mid-turn the state survives but the timer does not
+    if ((await read($, view)).phase !== 'idle') startTicker($)
 
     return next(e)
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    startTicker($)
     const v = await read($, view)
     if (e.props.hasSurvey || v.phase === 'idle') return next(e)
+    startTicker($)
+    const below = await next(e)
 
     const isDesktop = e.surface === 'desktop'
     const bodyColumns = e.props.bodyColumns || 80
@@ -247,7 +256,7 @@ export const register: Register = (on, options) => {
     }
 
     if (e.surface === 'desktop') {
-      const { Svg } = $.ui.resolve(e)
+      const { Box, Svg } = $.ui.resolve(e)
       const width = cols * (SQUARE + GAP) - GAP
       const height = ROWS * (SQUARE + GAP) - GAP
       const rects = Array.from({ length: cells }, (_, i) => {
@@ -258,7 +267,12 @@ export const register: Register = (on, options) => {
       }).join('')
       const source = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">${rects}</svg>`
 
-      return <Svg source={source} alt={`Progress ${Math.floor(fraction(v) * 100)}%`} />
+      return (
+        <Box flexDirection="column">
+          <Svg source={source} alt={`Progress ${Math.floor(fraction(v) * 100)}%`} />
+          {below}
+        </Box>
+      )
     }
 
     const { Box, Text } = $.ui.resolve(e)
@@ -270,6 +284,6 @@ export const register: Register = (on, options) => {
       </Box>
     ))
 
-    return <Box flexDirection="column">{rows}</Box>
+    return <Box flexDirection="column">{rows}{below}</Box>
   })
 }

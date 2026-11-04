@@ -311,3 +311,51 @@ test('the desktop SVG has a viewBox and no fixed size, one rect per cell and an 
   expect((svg.match(/<rect /g) ?? []).length % 3).toBe(0)
   expect(found?.props.alt).toBe('Progress 50%')
 })
+
+test('other plugins\' bands above the prompt are still drawn beneath the grid', async ($, on) => {
+  stubEngine(on)
+  await $.turn.start(turn)
+  await $.tool.call(plan('completed', 'pending'))
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...BAND, surface } as never)
+    const below = await ui.findAll({ type: 'Text', text: 'engine' })
+    await ui.unmount()
+
+    expect(below).toHaveLength(1)
+  }
+})
+
+test('other tools pass straight through and never move the bar', async ($, on) => {
+  stubEngine(on)
+  await $.turn.start(turn)
+  await $.tool.call(plan('completed', 'pending'))
+
+  const result = await $.tool.call({ tool: 'Bash', command: 'ls', items: [{ status: 'completed' }, { status: 'completed' }] } as never)
+  expect(result).toEqual({ result: {} })
+  expect((await draw($)).lit).toBe(CELLS / 2)
+})
+
+test('the clock runs only while the grid is on screen', async ($, on) => {
+  stubEngine(on)
+  on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
+  // each tick of the clock reads the bar's state, so state reads count ticks
+  let ticks = 0
+  on('state.get', (_: any, e: any, next: any) => { ticks++; return next(e) })
+  const clock = mock.clock(on)
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const idle = ticks
+  await clock.advance(125 * 20)
+  expect(ticks).toBe(idle)
+
+  await $.turn.start(turn)
+  await $.turn.complete({ ...complete, reason: 'answer' } as never)
+  await clock.advance(125 * 60)
+  const afterHold = ticks
+  expect(afterHold).toBeGreaterThan(0)
+
+  await clock.advance(125 * 40)
+  expect(ticks).toBe(afterHold)
+  expect(await shown($)).toBe(0)
+})

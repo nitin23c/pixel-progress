@@ -1,6 +1,6 @@
 {
   "name": "pixel-progress",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Retro, classic pixel-square progress bar above the prompt while Claude is working, in the style of GitHub's contribution graph.",
   "author": { "name": "Nitin Chauhan", "url": "https://github.com/nitin23c" },
   "homepage": "https://github.com/nitin23c/pixel-progress",

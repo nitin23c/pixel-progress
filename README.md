@@ -81,7 +81,7 @@ If the colors look wrong (black and white instead of green), check whether macOS
 
 ## Privacy and security
 
-The mod runs entirely inside Claude Code. Its code makes no network calls, reads and writes no files and runs no processes. It never changes a prompt or a tool call: it only reads the step statuses of the task list and draws the grid. While it is drawing, it replaces other plugins' bands above the prompt rather than adding to them. Its state (the plan's statuses, a few counters for the animation and a random seed) is kept by Claude Code for the session. See `hooks/register.tsx`.
+The mod runs entirely inside Claude Code. Its code makes no network calls, reads and writes no files and runs no processes. It never changes a prompt or a tool call: its tool hook is only called for the two plan tools (`TodoWrite` and the desktop app's plan tool), reads their step statuses, and always lets the call through, even if the hook itself fails. While it is drawing, other plugins' bands above the prompt stay visible beneath the grid. Its animation clock runs only while the grid is on screen and stops once it hides. Its state (the plan's statuses, a few counters for the animation and a random seed) is kept by Claude Code for the session. See `hooks/register.tsx`.
 
 ## Develop
 
